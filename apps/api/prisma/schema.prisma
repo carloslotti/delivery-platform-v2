@@ -1,0 +1,433 @@
+// ============================================================
+// Delivery Platform - Prisma Schema
+// ============================================================
+// Multi-tenant SaaS para logística de entrega
+// Isolamento por tenant_id em todas as tabelas operacionais
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// CORE
+// ============================================================
+
+model Tenant {
+  id              String   @id @default(uuid())
+  name            String
+  slug            String   @unique
+  status          TenantStatus @default(ACTIVE)
+  planTier        PlanTier @default(STARTER)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  users           User[]
+  stores          Store[]
+  drivers         Driver[]
+  deliveries      Delivery[]
+  wallet          Wallet?
+  invoices        Invoice[]
+  walletTxs       WalletTransaction[]
+
+  @@map("tenants")
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+  CANCELLED
+}
+
+enum PlanTier {
+  STARTER
+  PRO
+  BUSINESS
+  ENTERPRISE
+}
+
+// ============================================================
+// USERS & AUTH
+// ============================================================
+
+model User {
+  id              String   @id @default(uuid())
+  tenantId        String
+  email           String   @unique
+  phone           String?
+  passwordHash    String
+  fullName        String
+  role            UserRole @default(OPERATOR)
+  status          UserStatus @default(ACTIVE)
+  lastLoginAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  driver          Driver?
+
+  @@index([tenantId])
+  @@map("users")
+}
+
+enum UserRole {
+  PLATFORM_ADMIN  // super-admin da plataforma
+  OWNER           // dono da loja
+  MANAGER         // gerente
+  OPERATOR        // operador / caixa
+  DRIVER          // entregador
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  BANNED
+}
+
+// ============================================================
+// STORES
+// ============================================================
+
+model Store {
+  id              String   @id @default(uuid())
+  tenantId        String
+  name            String
+  cnpj            String?
+  phone           String?
+  whatsapp        String?
+  email           String?
+
+  // endereço de coleta padrão
+  pickupStreet    String
+  pickupNumber    String
+  pickupComplement String?
+  pickupNeighborhood String?
+  pickupCity      String
+  pickupState     String   @db.VarChar(2)
+  pickupZip       String
+  pickupLat       Float?
+  pickupLng       Float?
+
+  isOpen          Boolean  @default(false)
+  logoUrl         String?
+
+  // configuração
+  baseDeliveryPriceCents Int     @default(600)   // R$ 6,00
+  driverPayoutCents      Int     @default(400)   // R$ 4,00
+  pricePerKmCents        Int     @default(80)    // R$ 0,80/km extra
+  freeDistanceKm         Float   @default(3.0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deliveries      Delivery[]
+
+  @@index([tenantId])
+  @@map("stores")
+}
+
+// ============================================================
+// DRIVERS
+// ============================================================
+
+model Driver {
+  id              String   @id @default(uuid())
+  tenantId        String
+  userId          String?  @unique
+  fullName        String
+  cpf             String?
+  cnh             String?
+  phone           String
+  vehicleType     VehicleType @default(MOTORCYCLE)
+  vehiclePlate    String?
+  pixKey          String?
+
+  status          DriverStatus @default(OFFLINE)
+  currentLat      Float?
+  currentLng      Float?
+  lastLocationAt  DateTime?
+
+  // gamificação
+  xpPoints        Int      @default(0)
+  level           DriverLevel @default(BRONZE)
+  ratingAvg       Float    @default(5.0)
+  totalDeliveries Int      @default(0)
+  totalEarningsCents Int   @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user            User?    @relation(fields: [userId], references: [id])
+  deliveries      Delivery[]
+  shifts          DriverShift[]
+  locations       DriverLocation[]
+
+  @@index([tenantId, status])
+  @@map("drivers")
+}
+
+enum VehicleType {
+  MOTORCYCLE
+  BICYCLE
+  CAR
+  WALKER
+  ELECTRIC_BIKE
+}
+
+enum DriverStatus {
+  OFFLINE
+  AVAILABLE
+  BUSY
+  ON_BREAK
+}
+
+enum DriverLevel {
+  BRONZE
+  SILVER
+  GOLD
+  DIAMOND
+  MASTER
+}
+
+model DriverShift {
+  id              String   @id @default(uuid())
+  driverId        String
+  scheduledStart  DateTime
+  scheduledEnd    DateTime
+  actualStart     DateTime?
+  actualEnd       DateTime?
+  status          ShiftStatus @default(SCHEDULED)
+  createdAt       DateTime @default(now())
+
+  driver          Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId, scheduledStart])
+  @@map("driver_shifts")
+}
+
+enum ShiftStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  MISSED
+  CANCELLED
+}
+
+// histórico de localização (time-series simplificada)
+model DriverLocation {
+  id              String   @id @default(uuid())
+  driverId        String
+  lat             Float
+  lng             Float
+  speed           Float?
+  heading         Float?
+  recordedAt      DateTime @default(now())
+
+  driver          Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId, recordedAt])
+  @@map("driver_locations")
+}
+
+// ============================================================
+// DELIVERIES (entrega — entidade central)
+// ============================================================
+
+model Delivery {
+  id              String   @id @default(uuid())
+  tenantId        String
+  storeId         String
+  driverId        String?
+
+  shortCode       String   @unique  // #16612
+  externalRef     String?           // #4299 (referência do PDV da loja)
+  status          DeliveryStatus @default(SEARCHING)
+
+  // coleta
+  pickupStreet    String
+  pickupNumber    String
+  pickupComplement String?
+  pickupNeighborhood String?
+  pickupCity      String
+  pickupState     String   @db.VarChar(2)
+  pickupZip       String?
+  pickupLat       Float
+  pickupLng       Float
+  pickupNotes     String?
+
+  // entrega
+  dropoffStreet   String
+  dropoffNumber   String
+  dropoffComplement String?
+  dropoffNeighborhood String?
+  dropoffCity     String
+  dropoffState    String   @db.VarChar(2)
+  dropoffZip      String?
+  dropoffLat      Float?
+  dropoffLng      Float?
+  dropoffNotes    String?
+
+  recipientName   String?
+  recipientPhone  String?
+
+  // características
+  distanceKm      Float?
+  estimatedDurationMin Int?
+  packageType     PackageType @default(GENERIC)
+  packageValueCents Int?
+  requiresProof   Boolean  @default(false)
+  requiresReturn  Boolean  @default(false)
+
+  // precificação
+  basePriceCents  Int
+  surgeMultiplier Float    @default(1.0)
+  totalPriceCents Int      // o que a loja paga
+  driverPayoutCents Int    // o que o motoboy recebe
+  platformTakeCents Int    // margem da plataforma
+
+  // tracking
+  trackingToken   String   @unique @default(cuid())
+
+  // timeline
+  createdAt       DateTime @default(now())
+  searchingAt     DateTime?
+  assignedAt      DateTime?
+  pickedUpAt      DateTime?
+  deliveredAt     DateTime?
+  cancelledAt     DateTime?
+  cancelReason    String?
+
+  // metadata
+  proofImageUrl   String?
+  metadata        Json?
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store           Store    @relation(fields: [storeId], references: [id])
+  driver          Driver?  @relation(fields: [driverId], references: [id])
+  events          DeliveryEvent[]
+
+  @@index([tenantId, status, createdAt(sort: Desc)])
+  @@index([storeId, createdAt(sort: Desc)])
+  @@index([driverId, status])
+  @@map("deliveries")
+}
+
+enum DeliveryStatus {
+  PENDING       // criado, ainda não buscando
+  SEARCHING     // procurando entregador
+  ASSIGNED      // entregador atribuído
+  PICKING_UP    // entregador a caminho da coleta
+  IN_TRANSIT    // coletado, levando ao destino
+  DELIVERED     // entregue
+  CANCELLED     // cancelado
+  FAILED        // falha (não conseguiu entregar)
+}
+
+enum PackageType {
+  FOOD
+  PHARMACY
+  DOCUMENT
+  GROCERY
+  ELECTRONICS
+  GENERIC
+}
+
+// audit log da entrega (timeline detalhada)
+model DeliveryEvent {
+  id              String   @id @default(uuid())
+  deliveryId      String
+  type            String   // status_change, location_update, note_added, etc.
+  data            Json
+  occurredAt      DateTime @default(now())
+
+  delivery        Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryId, occurredAt])
+  @@map("delivery_events")
+}
+
+// ============================================================
+// WALLET & FINANCIAL
+// ============================================================
+
+model Wallet {
+  tenantId            String   @id
+  balanceCents        Int      @default(0)        // pode ser negativo (pós-pago)
+  creditLimitCents    Int      @default(50000)    // R$ 500
+  invoiceDay          Int      @default(15)       // dia do mês de fechamento
+  dueDays             Int      @default(7)        // dias após fechamento
+  status              WalletStatus @default(OK)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("wallets")
+}
+
+enum WalletStatus {
+  OK
+  WARNING       // perto do limite
+  SUSPENDED     // estourou o limite
+  BLOCKED       // inadimplente
+}
+
+model WalletTransaction {
+  id              String   @id @default(uuid())
+  tenantId        String
+  type            TxType
+  amountCents     Int      // positivo = crédito, negativo = débito
+  description     String
+  deliveryId      String?
+  invoiceId       String?
+  metadata        Json?
+  occurredAt      DateTime @default(now())
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, occurredAt(sort: Desc)])
+  @@map("wallet_transactions")
+}
+
+enum TxType {
+  DELIVERY_CHARGE     // débito de entrega
+  REFUND              // reembolso
+  MANUAL_CREDIT       // crédito manual (recarga, ajuste)
+  INVOICE_PAYMENT     // pagamento de fatura
+  ADJUSTMENT          // ajuste manual
+}
+
+model Invoice {
+  id              String   @id @default(uuid())
+  tenantId        String
+  number          String   @unique
+  periodStart     DateTime
+  periodEnd       DateTime
+  totalCents      Int
+  status          InvoiceStatus @default(OPEN)
+  dueDate         DateTime
+  paidAt          DateTime?
+  pdfUrl          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("invoices")
+}
+
+enum InvoiceStatus {
+  OPEN
+  PAID
+  OVERDUE
+  CANCELLED
+}
