@@ -292,9 +292,9 @@ export default function LancarPedidoPage() {
                   </div>
                 )}
 
-                <Button type="submit" loading={loading} size="lg" className="w-full" disabled={!dropoffCoords}>
-                  {dropoffCoords ? 'Chamar entregador' : 'Aguardando endereço completo...'}
-                </Button>
+                <Button type="submit" loading={loading} size="lg" className="w-full" disabled={!form.dropoffStreet || !form.dropoffNumber || !form.dropoffCity}>
+  Chamar entregador
+</Button>
               </form>
             </CardBody>
           </Card>
