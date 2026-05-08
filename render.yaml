@@ -19,7 +19,7 @@ services:
     region: oregon
     plan: free
     rootDir: apps/api
-    buildCommand: "npm install && npx prisma generate && npm run build && npx prisma db push --accept-data-loss --skip-generate && npx tsx prisma/seed.ts"
+    buildCommand: buildCommand: "npm install && npx prisma generate && npm run build && ls -la dist/ && npx prisma db push --accept-data-loss --skip-generate && npx tsx prisma/seed.ts"
     startCommand: "node dist/main.js"
     envVars:
       - key: NODE_VERSION
