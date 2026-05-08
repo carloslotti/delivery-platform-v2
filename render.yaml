@@ -21,7 +21,7 @@ services:
     rootDir: apps/api
     buildCommand: "npm install && npx prisma generate && npm run build || (echo '===BUILD FALHOU===' && cat tsconfig.json && exit 1)"
     preDeployCommand: "ls -la dist/ && cat dist/main.js | head -5 && npx prisma db push --accept-data-loss --skip-generate"
-    startCommand: "node dist/main.js"
+    startCommand: startCommand: "node dist/src/main.js"
     envVars:
       - key: NODE_VERSION
         value: "20"
