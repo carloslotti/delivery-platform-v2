@@ -46,7 +46,6 @@ export default function ConfiguracoesPage() {
     }
   };
 
-  // geocodifica automaticamente após mudança de endereço (debounced)
   useEffect(() => {
     const { pickupStreet, pickupNumber, pickupCity, pickupState } = form;
     if (!pickupStreet || !pickupNumber || !pickupCity) return;
@@ -76,9 +75,9 @@ export default function ConfiguracoesPage() {
         pickupCity: form.pickupCity,
         pickupState: form.pickupState,
         pickupZip: form.pickupZip,
-        baseDeliveryPriceCents: parseInt(form.baseDeliveryPriceCents),
-        driverPayoutCents: parseInt(form.driverPayoutCents),
-        pricePerKmCents: parseInt(form.pricePerKmCents),
+        baseDeliveryPriceCents: form.baseDeliveryPriceCents,
+        driverPayoutCents: form.driverPayoutCents,
+        pricePerKmCents: form.pricePerKmCents,
         freeDistanceKm: parseFloat(form.freeDistanceKm),
       };
       if (coords) {
@@ -108,7 +107,6 @@ export default function ConfiguracoesPage() {
       <form onSubmit={submit} className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <div className="lg:col-span-3 space-y-6">
 
-          {/* Dados da loja */}
           <Card>
             <CardBody>
               <h3 className="display text-xl text-ink-900 mb-4">Dados da loja</h3>
@@ -134,7 +132,6 @@ export default function ConfiguracoesPage() {
             </CardBody>
           </Card>
 
-          {/* Endereço de coleta */}
           <Card>
             <CardBody>
               <h3 className="display text-xl text-ink-900 mb-1">Endereço de coleta padrão</h3>
@@ -197,24 +194,25 @@ export default function ConfiguracoesPage() {
             </CardBody>
           </Card>
 
-          {/* Tabela de preços */}
           <Card>
             <CardBody>
               <h3 className="display text-xl text-ink-900 mb-1">Tabela de preços</h3>
-              <p className="text-sm text-ink-500 mb-4">Valores em centavos (ex: 600 = R$ 6,00)</p>
+              <p className="text-sm text-ink-500 mb-4">Valores em reais (ex: 6,00 = R$ 6,00)</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Input
-                  label="Preço base (centavos)"
+                  label="Preço base (R$)"
                   type="number"
-                  value={form.baseDeliveryPriceCents || 0}
-                  onChange={(e) => setForm({ ...form, baseDeliveryPriceCents: e.target.value })}
+                  step="0.01"
+                  value={((form.baseDeliveryPriceCents || 0) / 100).toFixed(2)}
+                  onChange={(e) => setForm({ ...form, baseDeliveryPriceCents: Math.round(parseFloat(e.target.value || '0') * 100) })}
                   hint="Valor cobrado da loja por entrega básica"
                 />
                 <Input
-                  label="Pagto. ao motoboy (centavos)"
+                  label="Pagto. ao motoboy (R$)"
                   type="number"
-                  value={form.driverPayoutCents || 0}
-                  onChange={(e) => setForm({ ...form, driverPayoutCents: e.target.value })}
+                  step="0.01"
+                  value={((form.driverPayoutCents || 0) / 100).toFixed(2)}
+                  onChange={(e) => setForm({ ...form, driverPayoutCents: Math.round(parseFloat(e.target.value || '0') * 100) })}
                   hint="Valor base que o entregador recebe"
                 />
                 <Input
@@ -225,10 +223,11 @@ export default function ConfiguracoesPage() {
                   onChange={(e) => setForm({ ...form, freeDistanceKm: e.target.value })}
                 />
                 <Input
-                  label="Preço por km adicional (centavos)"
+                  label="Preço por km adicional (R$)"
                   type="number"
-                  value={form.pricePerKmCents || 0}
-                  onChange={(e) => setForm({ ...form, pricePerKmCents: e.target.value })}
+                  step="0.01"
+                  value={((form.pricePerKmCents || 0) / 100).toFixed(2)}
+                  onChange={(e) => setForm({ ...form, pricePerKmCents: Math.round(parseFloat(e.target.value || '0') * 100) })}
                 />
               </div>
             </CardBody>
@@ -244,7 +243,6 @@ export default function ConfiguracoesPage() {
           </div>
         </div>
 
-        {/* Mapa lateral */}
         <div className="lg:col-span-2 space-y-4">
           <Card className="overflow-hidden">
             {coords ? (
