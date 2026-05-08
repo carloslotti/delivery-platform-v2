@@ -19,7 +19,8 @@ services:
     region: oregon
     plan: free
     rootDir: apps/api
-    buildCommand:buildCommand: "npm install --verbose && echo '=== APOS INSTALL ===' && npx prisma generate && echo '=== APOS PRISMA ===' && npm run build && echo '=== APOS BUILD ===' && find dist -type f 2>&1 | head -20 && echo '=== FIM ===' && npx prisma db push --accept-data-loss --skip-generate || echo '=== DB PUSH FALHOU MAS CONTINUA ==='"
+    buildCommand: "npm install && npx prisma generate && npm run build || (echo '===BUILD FALHOU===' && cat tsconfig.json && exit 1)"
+    preDeployCommand: "ls -la dist/ && cat dist/main.js | head -5 && npx prisma db push --accept-data-loss --skip-generate"
     startCommand: "node dist/main.js"
     envVars:
       - key: NODE_VERSION
