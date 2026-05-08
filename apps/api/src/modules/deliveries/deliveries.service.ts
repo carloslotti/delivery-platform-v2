@@ -399,12 +399,12 @@ export class DeliveriesService {
     }
   }
 
-  private async generateShortCode(): Promise<string> {
-    const last = await this.prisma.delivery.findFirst({
-      orderBy: { createdAt: 'desc' },
-      select: { shortCode: true },
-    });
-    const lastNum = last ? parseInt(last.shortCode.replace(/\D/g, '')) : 16000;
-    return `#${lastNum + 1}`;
+ private async generateShortCode(): Promise<string> {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const code = '#' + (Date.now() % 100000).toString().padStart(5, '0') +
+        Math.floor(Math.random() * 10).toString();
+      const exists = await this.prisma.delivery.findFirst({ where: { shortCode: code } });
+      if (!exists) return code;
+    }
+    return '#' + Date.now().toString();
   }
-}
