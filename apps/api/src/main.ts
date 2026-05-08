@@ -33,7 +33,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  await app.listen(port, '0.0.0.0');
+  await app.listen(process.env.PORT || process.env.API_PORT || 4000, '0.0.0.0');
   Logger.log(`🚀 API rodando na porta ${port} (prefix: /${prefix})`, 'Bootstrap');
 }
 
